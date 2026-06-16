@@ -18,25 +18,31 @@ signal42-training-repository/
 
 ## How to Contribute
 
-1. **Clone the repository**
+Since you don't have direct write access to this repository, contributions go through a **fork + pull request** workflow.
+
+1. **Fork the repository** — click the **Fork** button on GitHub to create your own copy.
+
+2. **Clone your fork**
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/your-github-username/signal42-training-repository.git
    cd signal42-training-repository
    ```
 
-2. **Create your personal folder** inside the relevant homework folder, using your name or alias:
+3. **Create your personal folder** inside the relevant homework folder, using your name or alias:
    ```bash
    mkdir -p homework-01/your-name
    ```
 
-3. **Add your work** — put whatever you like inside your folder: code, notes, experiments, solutions.
+4. **Add your work** — put whatever you like inside your folder: code, notes, experiments, solutions.
 
-4. **Commit and push**
+5. **Commit and push to your fork**
    ```bash
    git add homework-01/your-name/
    git commit -m "homework-01: your-name"
    git push
    ```
+
+6. **Open a Pull Request** — go to your fork on GitHub and click **Compare & pull request** to submit your work to the main repository.
 
 ## Guidelines
 
