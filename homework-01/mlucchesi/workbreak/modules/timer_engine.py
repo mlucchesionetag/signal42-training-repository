@@ -50,8 +50,8 @@ def _is_meeting_running() -> bool:
 
 def _play_notification_sound():
     """Play a short chime for desktop notifications using system audio."""
+    # Try 1: pygame (already initialized by lock screen audio)
     try:
-        # Try pygame first (may already be loaded)
         import pygame
         import numpy as np
         if pygame.mixer.get_init():
@@ -70,45 +70,60 @@ def _play_notification_sound():
     except Exception:
         pass
 
-    # Fallback: generate WAV and play with paplay/aplay
+    # Try 2: canberra-gtk-play (uses system sound theme, no WAV needed)
+    if shutil.which("canberra-gtk-play"):
+        try:
+            subprocess.Popen(
+                ["canberra-gtk-play", "--id=message-new-instant"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
+            return
+        except Exception:
+            pass
+
+    # Try 3: paplay with a generated WAV (PipeWire/PulseAudio — safe on Ubuntu 22+)
+    # Deliberately skip aplay: it segfaults on ALSA-over-PipeWire setups
+    if shutil.which("paplay"):
+        try:
+            sr, freq, dur, vol = 44100, 880, 0.5, 0.3
+            n = int(sr * dur)
+            fade = int(sr * 0.1)
+            samples = []
+            for i in range(n):
+                v = math.sin(2 * math.pi * freq * i / sr)
+                env = (i / fade) if i < fade else ((n - i) / fade) if i > n - fade else 1.0
+                samples.append(int(v * env * vol * 32767))
+            data = struct.pack(f"<{n}h", *samples)
+            tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+            with wave.open(tmp.name, 'w') as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(sr)
+                wf.writeframes(data)
+            tmp.close()
+            subprocess.Popen(
+                ["paplay", tmp.name],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
+            def _cleanup():
+                time.sleep(2)
+                try: os.unlink(tmp.name)
+                except Exception: pass
+            threading.Thread(target=_cleanup, daemon=True).start()
+            return
+        except Exception as e:
+            print(f"[Sound] paplay error: {e}")
+
+    # Try 4: python-sounddevice (rare fallback)
     try:
-        sr, freq, dur, vol = 44100, 880, 0.5, 0.3
-        n = int(sr * dur)
-        fade = int(sr * 0.1)
-        samples = []
-        for i in range(n):
-            v = math.sin(2 * math.pi * freq * i / sr)
-            env = 1.0
-            if i < fade:
-                env = i / fade
-            elif i > n - fade:
-                env = (n - i) / fade
-            samples.append(int(v * env * vol * 32767))
-        data = struct.pack(f"<{n}h", *samples)
-        tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-        with wave.open(tmp.name, 'w') as wf:
-            wf.setnchannels(1)
-            wf.setsampwidth(2)
-            wf.setframerate(sr)
-            wf.writeframes(data)
-        for player in ["paplay", "aplay", "ffplay"]:
-            if shutil.which(player):
-                args = [player, tmp.name]
-                if player == "ffplay":
-                    args = ["ffplay", "-nodisp", "-autoexit",
-                            "-loglevel", "quiet", tmp.name]
-                subprocess.Popen(args)
-                break
-        # Clean up after a delay
-        def cleanup():
-            time.sleep(2)
-            try:
-                os.unlink(tmp.name)
-            except Exception:
-                pass
-        threading.Thread(target=cleanup, daemon=True).start()
-    except Exception as e:
-        print(f"[Sound] {e}")
+        import numpy as np
+        import sounddevice as sd
+        sr, dur = 44100, 0.5
+        t = np.linspace(0, dur, int(sr * dur), endpoint=False)
+        wave_data = (0.3 * np.sin(2 * np.pi * 880 * t)) * np.exp(-6 * t / dur)
+        sd.play(wave_data.astype(np.float32), sr)
+    except Exception:
+        pass  # Silent fail — audio is nice-to-have, not critical
 
 
 class TimerEngine:
@@ -123,7 +138,11 @@ class TimerEngine:
 
     def run(self):
         self._running = True
-        self._schedule_next_break()
+        # Only schedule a new break if none was restored from disk
+        if not self.state.next_break_time:
+            self._schedule_next_break()
+        else:
+            print(f"[Timer] Riprendo dal tempo salvato: {self.state.next_break_time.strftime('%H:%M:%S')}")
         self._schedule_next_water()
 
         while self._running:
@@ -169,6 +188,7 @@ class TimerEngine:
     def _schedule_next_break(self):
         interval = self.state.settings.work_interval_min
         self.state.next_break_time = datetime.now() + timedelta(minutes=interval)
+        self.state.save()
         print(f"[Timer] Prossima pausa: {self.state.next_break_time.strftime('%H:%M:%S')}")
 
     def _schedule_next_water(self):

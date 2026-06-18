@@ -195,6 +195,74 @@ class Dashboard:
     def _build_stats(self, parent):
         frame = tk.Frame(parent, bg=COLORS["bg"])
 
+        # ── Next break countdown banner ────────────────────────────────────
+        banner = tk.Frame(frame, bg=COLORS["bg2"],
+                          highlightthickness=1, highlightbackground=COLORS["border"])
+        banner.pack(fill="x", padx=24, pady=(20, 0))
+
+        banner_inner = tk.Frame(banner, bg=COLORS["bg2"])
+        banner_inner.pack(fill="x", padx=24, pady=16)
+
+        tk.Label(banner_inner, text="⏱  Prossima pausa tra",
+                 bg=COLORS["bg2"], fg=COLORS["subtext"],
+                 font=("monospace", 12)).pack(side="left")
+
+        countdown_lbl = tk.Label(banner_inner, text="--:--",
+                                 bg=COLORS["bg2"], fg=COLORS["accent"],
+                                 font=("monospace", 28, "bold"))
+        countdown_lbl.pack(side="left", padx=(14, 0))
+
+        at_lbl = tk.Label(banner_inner, text="",
+                          bg=COLORS["bg2"], fg=COLORS["subtext"],
+                          font=("monospace", 11))
+        at_lbl.pack(side="left", padx=(10, 0))
+
+        # Progress bar
+        prog_bg = tk.Frame(banner, bg=COLORS["border"], height=4)
+        prog_bg.pack(fill="x", padx=0, pady=(0, 0))
+        prog_bar = tk.Frame(prog_bg, bg=COLORS["accent"], height=4)
+        prog_bar.place(x=0, y=0, relheight=1, width=0)
+
+        def _update_countdown():
+            if not frame.winfo_exists():
+                return
+            nbt = self.state.next_break_time
+            if nbt is None:
+                countdown_lbl.configure(text="--:--", fg=COLORS["subtext"])
+                at_lbl.configure(text="")
+                frame.after(1000, _update_countdown)
+                return
+
+            from datetime import datetime
+            delta = (nbt - datetime.now()).total_seconds()
+
+            if delta <= 0:
+                countdown_lbl.configure(text="ora!", fg=COLORS["danger"])
+                at_lbl.configure(text="")
+                prog_bar.place(x=0, y=0, relheight=1, relwidth=1)
+            else:
+                mins = int(delta // 60)
+                secs = int(delta % 60)
+                countdown_lbl.configure(
+                    text=f"{mins:02d}:{secs:02d}",
+                    fg=COLORS["danger"] if delta < 120 else
+                       COLORS["accent2"] if delta < 300 else
+                       COLORS["accent"]
+                )
+                at_lbl.configure(text=f"alle {nbt.strftime('%H:%M')}")
+                # Progress bar: fill = elapsed / interval
+                interval = self.state.settings.work_interval_min * 60
+                elapsed = interval - delta
+                frac = max(0.0, min(1.0, elapsed / interval)) if interval > 0 else 0
+                prog_bg.update_idletasks()
+                W = prog_bg.winfo_width() or 400
+                prog_bar.place(x=0, y=0, relheight=1, width=int(W * frac))
+
+            frame.after(1000, _update_countdown)
+
+        frame.after(100, _update_countdown)
+
+        # ── Stat cards ─────────────────────────────────────────────────────
         s = self.state.today_stats
         total_mv = s.movement_detected + s.movement_missed
         cards_data = [

@@ -90,6 +90,14 @@ class AppState:
             for k, v in cfg.items():
                 if hasattr(self.settings, k):
                     setattr(self.settings, k, v)
+            # Restore next_break_time so the timer survives restarts
+            nbt = data.get("next_break_time")
+            if nbt:
+                try:
+                    self.next_break_time = datetime.fromisoformat(nbt)
+                    print(f"[State] Prossima pausa ripristinata: {self.next_break_time.strftime('%H:%M:%S')}")
+                except Exception:
+                    pass
         except Exception as e:
             print(f"State load error: {e}")
 
@@ -99,6 +107,7 @@ class AppState:
             data = {
                 "today_stats": asdict(self.today_stats),
                 "settings": asdict(self.settings),
+                "next_break_time": self.next_break_time.isoformat() if self.next_break_time else None,
             }
             with open(path, "w") as f:
                 json.dump(data, f, indent=2)
